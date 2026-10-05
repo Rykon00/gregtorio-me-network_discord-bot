@@ -1,0 +1,22 @@
+# Keeps the bot online (see discord_presence.py). Copy this file into a folder of its own on a
+# machine that is always on, put the token into a file named .env next to it
+#
+#     DISCORD_BOT_TOKEN=...
+#
+# (readable by you only: chmod 600 .env) and run: docker compose up -d --build
+# Update with: docker compose up -d --build --pull always
+services:
+  discord-presence:
+    container_name: discord-presence
+    build: https://github.com/Rykon00/gregtorio-me-network_discord-bot.git#main:presence
+    image: discord-presence
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PRESENCE_TEXT: Factorio
+      PRESENCE_TYPE: playing   # playing | watching | listening | competing | custom
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m

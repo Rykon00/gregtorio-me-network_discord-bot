@@ -1,0 +1,40 @@
+# This repository's own pipeline: test the tool, show the plan on pull
+# requests, apply server.yml on main.
+name: Discord server
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: plan shows what would change, apply changes the server
+        type: choice
+        options: [plan, apply]
+        default: plan
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --quiet -r requirements.txt
+      - run: python -m unittest discover -s tests
+
+  sync:
+    needs: test
+    uses: ./.github/workflows/sync.yml
+    with:
+      config: server.yml
+      mode: ${{ github.event_name == 'push' && 'apply' || inputs.mode || 'plan' }}
+      self: true
+    secrets:
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}

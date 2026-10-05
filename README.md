@@ -1,3 +1,182 @@
 # Gregtorio & ME Network: Discord server as code
 
-Layout and tooling for the Gregtorio & ME Network Discord server.
+The layout of the Gregtorio & ME Network Discord server is
+described in YAML files and applied by a small tool, `discord_sync.py`, through GitHub Actions.
+Changing the server means changing a file and merging a pull request.
+
+| Lives in | Describes |
+| --- | --- |
+| this repository, `server.yml` | server settings, general roles, the shared categories (Information, Community, Staff, Voice) |
+| `Rykon00/Gregtorio`, `.discord/server.yml` | the Gregtorio category and its roles |
+| `Rykon00/me-network`, `.discord/server.yml` | the ME Network category and its roles |
+
+`server.yml` here is the **guild config**: it is the only file with a `guild_id` and the only one that
+may change server-wide settings. The files in the mod repositories are **fragments**. A fragment can
+only touch the categories and roles it declares itself.
+
+## How a change gets applied
+
+1. Edit the YAML (or a message under `content/`) on a branch and open a pull request.
+2. The workflow runs a dry run against the live server and posts the plan as a comment, for example
+   `create text channel #showcase in **Community**`.
+3. Merging to `main` applies exactly that plan.
+
+`plan` and `apply` run the same code; `plan` only skips the requests that change something.
+Running `apply` twice in a row changes nothing the second time.
+
+## Safety rules
+
+- **Nothing is deleted implicitly.** A channel, category, role or forum tag that disappears from the
+  config stays on the server and is listed under "Notes". Deleting a channel needs `delete: true` on
+  its entry; a category is only deleted once it is empty. Roles are never deleted.
+- **Renames keep the channel.** Objects are found by name. To rename, change `name` and list the old
+  one under `previous_names`; the channel keeps its ID, history and permissions.
+- **Each file stays in its lane.** A config only looks at channels inside its own categories (or
+  outside any category). It never adopts or changes a channel in a category another file owns.
+- **Manual per-member permission overrides survive.** Role overrides on managed channels are owned
+  by the config; overrides for individual members are left alone.
+- **Managed messages never ping.** They are posted with mentions disabled.
+
+## Config reference
+
+```yaml
+guild_id: "123..."            # guild config only
+
+server:                       # guild config only
+  name: My Server
+  description: Shown on the invite page of a Community server.
+  locale: en-US
+  verification_level: low     # none | low | medium | high | very_high
+  default_notifications: mentions   # all | mentions
+  content_filter: all_members       # disabled | members_without_roles | all_members
+  community: true             # required for announcement channels; never switched off by the tool
+  rules_channel: rules
+  updates_channel: moderators
+  system_channel: general
+  suppress_system_messages: [tips]  # any of: join, boost, tips, join_replies
+
+everyone:                     # guild config only; adjusts @everyone, leaves other bits alone
+  deny: [mention_everyone]
+  allow: []
+
+roles:
+  - name: Maintainer
+    previous_names: []
+    color: "#E67E22"
+    hoist: true               # shown as its own group in the member list
+    mentionable: false
+    permissions: [kick_members, manage_messages]   # lowercase Discord permission names
+
+categories:
+  - name: Information
+    previous_names: []
+    position: 0               # order of categories on the server, lowest first
+    read_only: true           # members can read but not write; inherited by the channels
+    private: false            # hidden from @everyone ...
+    visible_to: [Maintainer]  # ... except these roles (with private: true)
+    writers: [Maintainer]     # roles that may still write (with read_only: true)
+    overwrites:               # escape hatch for anything else
+      - role: Tester
+        allow: [attach_files]
+        deny: []
+    channels:
+      - name: rules           # channels are ordered as listed
+        type: text            # text (default) | announcement | forum | voice
+        topic: The rules.
+        slowmode: 0           # seconds, text and forum channels
+        messages:             # text and announcement channels
+          - file: content/rules.md   # path relative to this YAML file
+            pin: false
+            embeds: false     # show link previews
+      - name: help
+        type: forum
+        topic: Post guidelines shown above the forum.
+        tags: [question, bug, {name: solved, moderated: true, emoji: "✅"}]
+        require_tag: true
+        sort: latest_activity # latest_activity | creation_date
+        layout: list          # default | list | gallery
+        default_reaction: "👍"
+      - name: old-channel
+        delete: true          # the only way a channel gets deleted
+```
+
+Access settings (`read_only`, `private`, `visible_to`, `writers`) set on a channel replace the
+value inherited from its category.
+
+### Managed messages
+
+A message file is posted by the bot and edited in place when the file changes. The **first line**
+of the file identifies the message, so keep it stable (a heading works well); changing it posts a
+new message and leaves the old one. One file is one message, at most 2000 characters.
+
+Placeholders are replaced with real mentions: `{{#channel-name}}` and `{{@Role Name}}`.
+
+## Using it from a mod repository
+
+Add the fragment as `.discord/server.yml`, the secret `DISCORD_BOT_TOKEN` to the repository, and
+this workflow:
+
+```yaml
+name: Discord
+on:
+  pull_request:
+    paths: [".discord/**", ".github/workflows/discord.yml"]
+  push:
+    branches: [main]
+    paths: [".discord/**", ".github/workflows/discord.yml"]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sync:
+    uses: Rykon00/gregtorio-me-network_discord-bot/.github/workflows/sync.yml@main
+    with:
+      config: .discord/server.yml
+      mode: ${{ github.event_name == 'push' && 'apply' || 'plan' }}
+    secrets:
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+```
+
+A fragment looks like the `roles` and `categories` part of the guild config:
+
+```yaml
+roles:
+  - name: ME Network Updates
+    mentionable: true
+categories:
+  - name: ME Network
+    position: 30              # 20-79 are reserved for the mod categories
+    channels:
+      - name: me-chat
+      - name: me-releases
+        type: announcement
+        read_only: true
+```
+
+Pull requests from forks have no access to the token; for those the workflow only validates the
+file.
+
+## Running it locally
+
+```sh
+pip install -r requirements.txt
+python -m unittest discover -s tests          # no network, runs against an in-memory fake
+python discord_sync.py validate --config server.yml
+DISCORD_BOT_TOKEN=... python discord_sync.py plan --config server.yml
+```
+
+For a fragment add `--guild-config path/to/this/repo/server.yml`.
+
+## Not managed (yet)
+
+Server icon and banner, role order, who has which role, onboarding and the welcome screen, AutoMod
+rules, webhooks, emoji. Set these by hand in Discord; the tool does not touch them.
+
+## The bot
+
+The tool acts as the Discord application "Gregtorio & ME Network" and needs the Administrator
+permission on the server. Its token is stored as the Actions secret `DISCORD_BOT_TOKEN` and must
+never be committed or pasted anywhere else. If it leaks, reset it in the Discord Developer Portal
+and update the secrets.

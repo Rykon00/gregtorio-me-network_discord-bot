@@ -1,0 +1,89 @@
+# Guild config for the "Gregtorio & ME Network" Discord server.
+#
+# This file owns everything that is shared: server settings, the general roles
+# and the categories that do not belong to one mod. The per-mod categories live
+# in the mod repositories (.discord/server.yml in Gregtorio and me-network) and
+# are applied by the same tool.
+#
+# See README.md for the full reference.
+
+guild_id: "1556776296779088023"
+
+server:
+  name: Gregtorio & ME Network
+  description: Community for the Factorio mods Gregtorio Continued and ME Network.
+  locale: en-US
+  verification_level: low          # members need a verified e-mail address
+  default_notifications: mentions  # new members are only notified when mentioned
+  content_filter: all_members
+  community: true                  # needed for announcement channels
+  rules_channel: rules
+  updates_channel: moderators      # Discord posts its own notices for admins here
+  system_channel: general          # "X joined the server" messages
+  suppress_system_messages: [tips]
+
+everyone:
+  deny: [mention_everyone]
+
+roles:
+  - name: Maintainer
+    color: "#E67E22"
+    hoist: true
+    permissions:
+      - kick_members
+      - ban_members
+      - moderate_members
+      - manage_messages
+      - manage_threads
+      - manage_nicknames
+      - pin_messages
+      - view_audit_log
+      - mention_everyone
+  - name: Contributor
+    color: "#3498DB"
+    hoist: true
+  - name: Tester
+    color: "#2ECC71"
+
+categories:
+  - name: Information
+    position: 0
+    read_only: true
+    channels:
+      - name: welcome
+        topic: What this server is about and where to find the mods.
+        messages:
+          - file: content/welcome.md
+      - name: rules
+        topic: The server rules. By taking part you agree to follow them.
+        messages:
+          - file: content/rules.md
+      - name: announcements
+        type: announcement
+        topic: News that concerns both mods. Releases are announced in each mod's own category.
+
+  - name: Community
+    previous_names: [Text Channels]
+    position: 10
+    channels:
+      - name: general
+        topic: Talk about Factorio, the mods and everything around them.
+      - name: showcase
+        topic: Screenshots and videos of your factories.
+
+  # positions 20-79 are left free for the per-mod categories
+
+  - name: Staff
+    position: 80
+    private: true
+    visible_to: [Maintainer]
+    channels:
+      - name: moderators
+        topic: Maintainer chat. Discord also posts its community notices here.
+
+  - name: Voice
+    previous_names: [Voice Channels]
+    position: 90
+    channels:
+      - name: General
+        type: voice

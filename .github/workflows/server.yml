@@ -1,9 +1,14 @@
 # This repository's own pipeline: test the tool, show the plan on pull
 # requests, apply server.yml on main.
+#
+# Pull requests that only change the layout, the messages or the tool are merged
+# and applied automatically once the tests and the dry run pass (see sync.yml).
+# Changes to .github/ and requirements.txt always wait for a manual merge.
 name: Discord server
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
@@ -15,12 +20,14 @@ on:
         default: plan
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -36,5 +43,7 @@ jobs:
       config: server.yml
       mode: ${{ github.event_name == 'push' && 'apply' || inputs.mode || 'plan' }}
       self: true
+      automerge: true
+      automerge_files: '^(server\.yml$|content/|discord_sync\.py$|discord_announce\.py$|tests/|ci/|README\.md$)'
     secrets:
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}

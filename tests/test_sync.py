@@ -1,8 +1,10 @@
+import os
 import sys
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -444,6 +446,33 @@ class ValidationTests(SyncTestCase):
 
 
 class CliTests(SyncTestCase):
+    def setUp(self):
+        super().setUp()
+        self.outputs = self.dir / "github-output"
+        patcher = mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(self.outputs)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def step_outputs(self):
+        lines = self.outputs.read_text(encoding="utf-8").splitlines()
+        self.outputs.unlink()
+        return dict(line.split("=", 1) for line in lines)
+
+    def test_step_outputs(self):
+        config = str(self.dir / "server.yml")
+        self.run_cli("plan", "--config", config)
+        self.assertEqual(self.step_outputs(), {"mode": "plan", "ok": "true", "changes": "14", "deletions": "0"})
+        self.run_cli("apply", "--config", config)
+        self.assertEqual(self.step_outputs()["mode"], "apply")
+        self.edit("        tags: [question, solved]\n        require_tag: true\n", "        delete: true\n")
+        self.run_cli("plan", "--config", config)
+        self.assertEqual(self.step_outputs(), {"mode": "plan", "ok": "true", "changes": "1", "deletions": "1"})
+        self.run_cli("validate", "--config", config)
+        self.assertEqual(self.step_outputs(), {"mode": "validate", "ok": "true"})
+        self.edit("topic: Talk here.", "topik: x")
+        self.run_cli("plan", "--config", config)
+        self.assertEqual(self.step_outputs(), {"mode": "plan", "ok": "false"})
+
     def run_cli(self, *args):
         summary = self.dir / "summary.md"
         code = discord_sync.main([*args, "--summary-file", str(summary)], transport=self.fake)

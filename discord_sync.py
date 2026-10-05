@@ -528,6 +528,7 @@ class Syncer:
         self.apply = apply
         self.changes = []
         self.notes = []
+        self.deletions = 0
         self.me = None
         self.guild = None
         self.roles = []
@@ -1002,6 +1003,7 @@ class Syncer:
                 if live is None:
                     continue
                 self._mutate(f"DELETE channel #{live['name']} (delete: true)", "DELETE", f"/channels/{live['id']}")
+                self.deletions += 1
                 self.channels.remove(live)
             if category.get("delete") and parent is not None:
                 children = [c for c in self.channels if c.get("parent_id") == parent["id"]]
@@ -1011,6 +1013,7 @@ class Syncer:
                         "a category is only deleted once it is empty"
                     )
                 self._mutate(f"DELETE category **{parent['name']}** (delete: true)", "DELETE", f"/channels/{parent['id']}")
+                self.deletions += 1
                 self.channels.remove(parent)
 
     # -- ordering ----------------------------------------------------------
@@ -1145,6 +1148,15 @@ def write_summary(path, text):
         Path(path).write_text(text, encoding="utf-8")
 
 
+def write_outputs(**values):
+    """Step outputs for the GitHub workflow (no-op outside of GitHub Actions)."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            for key, value in values.items():
+                handle.write(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n")
+
+
 def main(argv=None, transport=None):
     parser = argparse.ArgumentParser(description="Sync a Discord server with a YAML layout.")
     parser.add_argument("mode", choices=["validate", "plan", "apply"])
@@ -1159,12 +1171,14 @@ def main(argv=None, transport=None):
         text = f"## Discord sync: `{args.config}`\n\n**Invalid config:** {error}\n"
         print(text)
         write_summary(args.summary_file, text)
+        write_outputs(mode=args.mode, ok=False)
         return 1
 
     if args.mode == "validate":
         text = f"## Discord sync: `{config.path}`\n\n**Config is valid.** (No connection to Discord was made.)\n"
         print(text)
         write_summary(args.summary_file, text)
+        write_outputs(mode=args.mode, ok=True)
         return 0
 
     if transport is None:
@@ -1186,6 +1200,7 @@ def main(argv=None, transport=None):
     text = render_summary(syncer, config, args.mode, error)
     print(text)
     write_summary(args.summary_file, text)
+    write_outputs(mode=args.mode, ok=error is None, changes=len(syncer.changes), deletions=syncer.deletions)
     return 1 if error is not None else 0
 
 

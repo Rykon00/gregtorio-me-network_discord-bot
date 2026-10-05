@@ -1,0 +1,119 @@
+# Reusable workflow: announce a mod release in its Discord channel.
+#
+# Called by the release workflows of the mod repositories after a release. It
+# can also be started by hand here (Actions > Discord announcement > Run
+# workflow) to preview an announcement or to post one for a version that is
+# out already. Posting the same version twice does nothing.
+name: Discord announcement
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: Channel name, e.g. gregtorio-releases
+        type: string
+        required: true
+      title:
+        description: Mod title, e.g. Gregtorio Continued
+        type: string
+        required: true
+      mod:
+        description: Mod name on the mod portal, e.g. gregtorio-continued
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      repository:
+        description: Repository with the changelog.txt (default is the calling repository)
+        type: string
+        default: ""
+      ref:
+        description: Commit, tag or branch of that repository to read changelog.txt from
+        type: string
+        default: ""
+      dry_run:
+        description: Only show the message, post nothing
+        type: boolean
+        default: false
+    secrets:
+      DISCORD_BOT_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel name, e.g. gregtorio-releases
+        type: string
+        required: true
+      title:
+        description: Mod title, e.g. Gregtorio Continued
+        type: string
+        required: true
+      mod:
+        description: Mod name on the mod portal, e.g. gregtorio-continued
+        type: string
+        required: true
+      version:
+        description: Version to announce, e.g. 0.5.1
+        type: string
+        required: true
+      repository:
+        description: Repository with the changelog.txt, e.g. Rykon00/Gregtorio
+        type: string
+        required: true
+      ref:
+        description: Commit, tag or branch to read changelog.txt from (default is the release tag)
+        type: string
+        default: ""
+      dry_run:
+        description: Only show the message, post nothing
+        type: boolean
+        default: true
+
+jobs:
+  announce:
+    name: ${{ inputs.dry_run && 'preview' || 'announce' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the changelog
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version)) || github.sha }}
+          path: mod
+
+      - name: Check out the tool
+        uses: actions/checkout@v5
+        with:
+          repository: Rykon00/gregtorio-me-network_discord-bot
+          path: tool
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Announce
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          TITLE: ${{ inputs.title }}
+          MOD: ${{ inputs.mod }}
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ inputs.repository || github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python -m pip install --quiet -r tool/requirements.txt
+          args=()
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          status=0
+          python tool/discord_announce.py \
+            --guild-config tool/server.yml \
+            --channel "$CHANNEL" --title "$TITLE" --version "$VERSION" \
+            --changelog mod/changelog.txt \
+            --link "Full changelog=https://github.com/$REPOSITORY/releases/tag/v$VERSION" \
+            --link "Mod portal=https://mods.factorio.com/mod/$MOD" \
+            --summary-file "$RUNNER_TEMP/announce.md" "${args[@]}" || status=$?
+          [ -f "$RUNNER_TEMP/announce.md" ] && cat "$RUNNER_TEMP/announce.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

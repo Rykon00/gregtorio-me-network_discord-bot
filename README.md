@@ -193,8 +193,8 @@ To preview an announcement, or to post one for a version that is out already, st
 ## Running it locally
 
 ```sh
-pip install -r requirements.txt
-python -m unittest discover -s tests          # no network, runs against an in-memory fake
+pip install -r requirements.txt -r presence/requirements.txt
+python -m unittest discover -s tests          # no network, runs against in-memory fakes
 python discord_sync.py validate --config server.yml
 DISCORD_BOT_TOKEN=... python discord_sync.py plan --config server.yml
 ```
@@ -218,6 +218,29 @@ When one of the two files changes on `main`, the workflow **Discord branding** u
 `discord_branding.py`: the server icon, the bot's avatar and the application icon. It can also be
 started by hand. Discord only reports a hash of the pictures it holds, so the sync cannot compare
 them with the files; that is why this is a step of its own and not part of `server.yml`.
+
+## Keeping the bot online
+
+Discord shows a bot as online only while something holds a Gateway connection for it. The tools
+above talk to Discord for a few seconds and are gone again, so on their own the bot looks offline
+all the time.
+
+`presence/` is a small service that does nothing but hold that connection: it logs in with a
+status ("Playing Factorio" by default), answers heartbeats and reconnects when the connection
+drops. It asks for no intents, so it receives no messages and no member data. It runs as a Docker
+container on a machine that is always on:
+
+```sh
+mkdir discord-presence && cd discord-presence
+curl -fsSLO https://raw.githubusercontent.com/Rykon00/gregtorio-me-network_discord-bot/main/presence/compose.yml
+curl -fsSLO https://raw.githubusercontent.com/Rykon00/gregtorio-me-network_discord-bot/main/presence/set-token.sh
+sh set-token.sh        # asks for the bot token, writes .env, builds and starts the container
+```
+
+The status is set in `compose.yml` (`PRESENCE_TEXT`, `PRESENCE_TYPE`). `docker compose up -d --build
+--pull always` updates the service to the current `main`. If Discord rejects the token, the
+service waits an hour instead of retrying, because repeated failed logins make Discord reset a
+token.
 
 ## Not managed (yet)
 

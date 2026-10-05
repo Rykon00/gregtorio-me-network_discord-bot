@@ -23,7 +23,8 @@ server:
   suppress_system_messages: [tips]
 
 everyone:
-  deny: [mention_everyone]
+  # the same set Discord's "Stop @everyone spam" prompt removes
+  deny: [mention_everyone, create_guild_expressions, create_events]
 
 roles:
   - name: Maintainer

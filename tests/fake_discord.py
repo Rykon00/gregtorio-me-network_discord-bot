@@ -224,6 +224,16 @@ class FakeDiscord:
             message = self._message(match.group(1), match.group(2), method, path)
             message["pinned"] = method == "PUT"
             return None
+        match = re.fullmatch(r"/channels/(\d+)/messages/(\d+)/crosspost", path)
+        if match and method == "POST":
+            channel = self._channel(match.group(1), method, path)
+            message = self._message(match.group(1), match.group(2), method, path)
+            if channel["type"] != 5:
+                self._fail(400, method, path, "Cannot crosspost outside of an announcement channel")
+            if message.get("crossposted"):
+                self._fail(400, method, path, "This message has already been crossposted", 40033)
+            message["crossposted"] = True
+            return message
         match = re.fullmatch(r"/channels/(\d+)/messages/(\d+)", path)
         if match and method == "PATCH":
             message = self._message(match.group(1), match.group(2), method, path)

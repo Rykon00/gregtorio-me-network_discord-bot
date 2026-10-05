@@ -24,6 +24,20 @@ only touch the categories and roles it declares itself.
 `plan` and `apply` run the same code; `plan` only skips the requests that change something.
 Running `apply` twice in a row changes nothing the second time.
 
+### Automatic merge
+
+A pull request does not wait for someone to press the button when all of this holds:
+
+- it comes from a branch of the repository itself and is not a draft,
+- it only changes Discord files: `.discord/` in a mod repository; here the layout, `content/`, the
+  tool, its tests and this README,
+- the tests and the dry run against the server succeeded,
+- the plan deletes nothing.
+
+The workflow then merges it, applies it and posts the result as a second comment. Open a pull
+request as a **draft** to hold it back. Deletions, changes to `.github/` or `requirements.txt` and
+pull requests that also touch other files always wait for a manual merge.
+
 ## Safety rules
 
 - **Nothing is deleted implicitly.** A channel, category, role or forum tag that disappears from the
@@ -120,13 +134,14 @@ this workflow:
 name: Discord
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: [".discord/**", ".github/workflows/discord.yml"]
   push:
     branches: [main]
     paths: [".discord/**", ".github/workflows/discord.yml"]
 
 permissions:
-  contents: read
+  contents: write             # read is enough without automerge
   pull-requests: write
 
 jobs:
@@ -135,6 +150,7 @@ jobs:
     with:
       config: .discord/server.yml
       mode: ${{ github.event_name == 'push' && 'apply' || 'plan' }}
+      automerge: true         # merge and apply pull requests that only change .discord/
     secrets:
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
 ```
@@ -157,6 +173,32 @@ categories:
 
 Pull requests from forks have no access to the token; for those the workflow only validates the
 file.
+
+## Release announcements
+
+`discord_announce.py` posts a digest of one version's section of a Factorio `changelog.txt` to a
+channel: the first entries of every category, as many as fit into one message, and links to the
+full changelog and the mod portal. In an announcement channel the message is also published to the
+servers that follow the channel. Announcing the same version again does nothing.
+
+The release workflows of the mod repositories call `.github/workflows/announce.yml` after a release:
+
+```yaml
+  announce:
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    uses: Rykon00/gregtorio-me-network_discord-bot/.github/workflows/announce.yml@main
+    with:
+      channel: me-network-releases
+      title: ME Network
+      mod: me-network
+      version: ${{ needs.build.outputs.version }}
+    secrets:
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+```
+
+To preview an announcement, or to post one for a version that is out already, start the workflow
+**Discord announcement** by hand in this repository (Actions tab). It starts as a dry run.
 
 ## Running it locally
 

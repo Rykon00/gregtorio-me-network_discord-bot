@@ -15,6 +15,7 @@ Source and issues: https://github.com/Rykon00/me-network
 - {{#announcements}} – news about both mods
 - {{#general}} – chat about the mods and Factorio
 - {{#showcase}} – show your factory
+- The **Gregtorio** and **ME Network** categories – each mod has a chat, a help forum for questions and a release channel you can follow
 
 ## Found a bug?
-Bugs are tracked on GitHub. Open an issue in the repository of the mod it belongs to and attach your log file and, if you can, a save. If you are not sure whether something is a bug, ask here first.
+Bugs are tracked on GitHub. Open an issue in the repository of the mod it belongs to and attach your log file and, if you can, a save. If you are not sure whether something is a bug, ask in the mod's help forum first.

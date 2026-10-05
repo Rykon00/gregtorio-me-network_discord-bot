@@ -212,3 +212,7 @@ The tool acts as the Discord application "Gregtorio & ME Network" and needs the 
 permission on the server. Its token is stored as the Actions secret `DISCORD_BOT_TOKEN` and must
 never be committed or pasted anywhere else. If it leaks, reset it in the Discord Developer Portal
 and update the secrets.
+
+## License
+
+GPLv3 (see `LICENSE`), like Gregtorio Continued and ME Network, the mods this server belongs to.

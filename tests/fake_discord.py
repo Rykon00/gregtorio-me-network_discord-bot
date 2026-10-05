@@ -8,7 +8,9 @@ behaviour instead of a permissive mock.
 
 from __future__ import annotations
 
+import base64
 import copy
+import hashlib
 import re
 
 from discord_sync import ApiError
@@ -24,7 +26,9 @@ class FakeDiscord:
     def __init__(self):
         self._next = 200000000000000000
         self.calls = []  # every request as (method, path)
-        self.me = {"id": BOT_ID, "username": "sync-bot", "bot": True}
+        self.me = {"id": BOT_ID, "username": "sync-bot", "bot": True, "avatar": None}
+        self.application = {"id": BOT_ID, "icon": None}
+        self.application_icon_fails = False
         self.guild = {
             "id": GUILD_ID,
             "name": "Rykon's server",
@@ -38,6 +42,7 @@ class FakeDiscord:
             "public_updates_channel_id": None,
             "preferred_locale": "en-US",
             "description": None,
+            "icon": None,
         }
         self.roles = [
             {"id": GUILD_ID, "name": "@everyone", "permissions": DEFAULT_EVERYONE, "color": 0,
@@ -154,6 +159,14 @@ class FakeDiscord:
     def _route(self, method, path, body, query):
         if (method, path) == ("GET", "/users/@me"):
             return self.me
+        if (method, path) == ("PATCH", "/users/@me"):
+            self.me["avatar"] = self._picture(body["avatar"], method, path)
+            return self.me
+        if (method, path) == ("PATCH", "/applications/@me"):
+            if self.application_icon_fails:
+                self._fail(403, method, path, "Missing Access", 50001)
+            self.application["icon"] = self._picture(body["icon"], method, path)
+            return self.application
         guild = f"/guilds/{GUILD_ID}"
         if path == guild:
             if method == "GET":
@@ -252,7 +265,16 @@ class FakeDiscord:
             self._fail(400, method, path, "Unknown parent category")
         return self._add_channel(body)
 
+    def _picture(self, uri, method, path):
+        """Accept a data URI like Discord does and return a stand-in for the stored hash."""
+        match = re.fullmatch(r"data:image/(png|jpeg|gif);base64,([A-Za-z0-9+/=]+)", uri or "")
+        if not match:
+            self._fail(400, method, path, "Invalid image data")
+        return hashlib.sha256(base64.b64decode(match.group(2))).hexdigest()[:32]
+
     def _patch_guild(self, body, method, path):
+        if "icon" in body:
+            body["icon"] = self._picture(body["icon"], method, path)
         merged = dict(self.guild, **body)
         if "COMMUNITY" in merged["features"]:
             text_ids = {c["id"] for c in self.channels if c["type"] in (0, 5)}

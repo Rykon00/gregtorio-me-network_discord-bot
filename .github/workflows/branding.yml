@@ -1,0 +1,43 @@
+# Sets the server icon and the bot avatar from the pictures in assets/.
+#
+# Discord cannot tell whether the pictures it holds are these files, so this
+# does not run with every sync: it runs when one of the files changes on main,
+# or by hand. On pull requests it only checks the files.
+name: Discord branding
+
+on:
+  pull_request:
+    paths: ["assets/server-icon.png", "assets/bot-avatar.png", "discord_branding.py", ".github/workflows/branding.yml"]
+  push:
+    branches: [main]
+    paths: ["assets/server-icon.png", "assets/bot-avatar.png"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branding:
+    name: ${{ github.event_name == 'pull_request' && 'check pictures' || 'set pictures' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set the server icon and the bot avatar
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'pull_request' }}
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          args=()
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          status=0
+          python discord_branding.py --guild-config server.yml \
+            --server-icon assets/server-icon.png --bot-avatar assets/bot-avatar.png \
+            --summary-file "$RUNNER_TEMP/branding.md" "${args[@]}" || status=$?
+          [ -f "$RUNNER_TEMP/branding.md" ] && cat "$RUNNER_TEMP/branding.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

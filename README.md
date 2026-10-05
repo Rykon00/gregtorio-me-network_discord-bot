@@ -201,9 +201,27 @@ DISCORD_BOT_TOKEN=... python discord_sync.py plan --config server.yml
 
 For a fragment add `--guild-config path/to/this/repo/server.yml`.
 
+## Server icon and bot avatar
+
+`assets/server-icon.png` and `assets/bot-avatar.png` are the pictures of the server and of the bot.
+Both are a crossover of the two mod thumbnails: the Gregtorio lettering and gear with the drive,
+terminal and cable loop of ME Network. The avatar is the variant without anything important in the
+corners, because Discord shows avatars as circles.
+
+`tools/make_icons.py` builds them from the thumbnails (it needs Pillow and NumPy):
+
+```sh
+python tools/make_icons.py --gregtorio ../Gregtorio/thumbnail.png --me-network ../me-network/thumbnail.png
+```
+
+When one of the two files changes on `main`, the workflow **Discord branding** uploads them with
+`discord_branding.py`: the server icon, the bot's avatar and the application icon. It can also be
+started by hand. Discord only reports a hash of the pictures it holds, so the sync cannot compare
+them with the files; that is why this is a step of its own and not part of `server.yml`.
+
 ## Not managed (yet)
 
-Server icon and banner, role order, who has which role, onboarding and the welcome screen, AutoMod
+The server banner, role order, who has which role, onboarding and the welcome screen, AutoMod
 rules, webhooks, emoji. Set these by hand in Discord; the tool does not touch them.
 
 ## The bot
@@ -216,3 +234,8 @@ and update the secrets.
 ## License
 
 GPLv3 (see `LICENSE`), like Gregtorio Continued and ME Network, the mods this server belongs to.
+
+The pictures in `assets/` are put together from the thumbnails of the two mods: the Gregtorio logo
+(lettering and gear) from Gregtorio Continued, and the drive, terminal and cables from ME Network,
+whose graphics are made from [GT5-Unofficial](https://github.com/GTNewHorizons/GT5-Unofficial) by
+GTNewHorizons (LGPL-3.0). See the License sections of the two mod repositories.

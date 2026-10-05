@@ -28,7 +28,7 @@ Running `apply` twice in a row changes nothing the second time.
 
 A pull request does not wait for someone to press the button when all of this holds:
 
-- it comes from a branch of the repository itself and is not a draft,
+- it comes from a branch of the repository itself, targets `main` and is not a draft,
 - it only changes Discord files: `.discord/` in a mod repository; here the layout, `content/`, the
   tool, its tests and this README,
 - the tests and the dry run against the server succeeded,

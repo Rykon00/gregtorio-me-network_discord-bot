@@ -5,7 +5,8 @@
 #
 # With automerge: true a pull request is merged by this workflow, and applied
 # right away, when all of this holds:
-#   - it comes from a branch of the repository itself and is not a draft,
+#   - it comes from a branch of the repository itself, targets the default
+#     branch and is not a draft,
 #   - every file it changes matches automerge_files,
 #   - the dry run against the server succeeded,
 #   - the plan deletes nothing.
@@ -87,6 +88,7 @@ jobs:
       inputs.automerge
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.base.ref == github.event.repository.default_branch
       && !github.event.pull_request.draft
       && needs.sync.outputs.mode == 'plan'
       && needs.sync.outputs.ok == 'true'

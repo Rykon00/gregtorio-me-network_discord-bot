@@ -181,21 +181,11 @@ channel: the first entries of every category, as many as fit into one message, a
 full changelog and the mod portal. In an announcement channel the message is also published to the
 servers that follow the channel. Announcing the same version again does nothing.
 
-The release workflows of the mod repositories call `.github/workflows/announce.yml` after a release:
-
-```yaml
-  announce:
-    needs: build
-    if: needs.build.outputs.release == 'true'
-    uses: Rykon00/gregtorio-me-network_discord-bot/.github/workflows/announce.yml@main
-    with:
-      channel: me-network-releases
-      title: ME Network
-      mod: me-network
-      version: ${{ needs.build.outputs.version }}
-    secrets:
-      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-```
+The release workflows of the mod repositories run it in a job of their own after a release (job
+`announce` in their `.github/workflows/release.yml`). That job checks this repository out and calls
+the script directly instead of using a reusable workflow, so the release pipelines do not depend on
+the workflow files here: whatever happens to this repository, a release still goes through, and the
+announcement can be re-run alone.
 
 To preview an announcement, or to post one for a version that is out already, start the workflow
 **Discord announcement** by hand in this repository (Actions tab). It starts as a dry run.

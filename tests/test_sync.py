@@ -327,6 +327,57 @@ class GuildConfigTests(SyncTestCase):
         self.assertIn("Missing Permissions", str(caught.exception))
 
 
+class InviteTests(SyncTestCase):
+    def setUp(self):
+        super().setUp()
+        self.edit("  system_channel: general\n", "  system_channel: general\n  invite_channel: rules\n")
+
+    def invites(self):
+        return self.fake.invites.get(self.fake.channel("rules")["id"], [])
+
+    def test_plan_announces_the_link_and_apply_creates_it_once(self):
+        planned = self.sync(apply=False)
+        self.assertIn("create a permanent invite link to #rules", planned.changes)
+        self.assertIsNone(planned.invite_url)
+        self.assertEqual(self.fake.mutations(), [])
+
+        applied = self.sync()
+        [invite] = self.invites()
+        self.assertEqual((invite["max_age"], invite["max_uses"], invite["temporary"]), (0, 0, False))
+        self.assertEqual(applied.invite_url, f"https://discord.gg/{invite['code']}")
+
+        again = self.sync()
+        self.assertEqual(again.changes, [])
+        self.assertEqual(again.invite_url, applied.invite_url)
+        self.assertEqual(len(self.invites()), 1)
+
+    def test_other_invites_do_not_count(self):
+        self.sync()
+        rules = self.fake.channel("rules")["id"]
+        own = self.invites()[0]
+        self.fake.invites[rules] = [
+            dict(own, code="byowner", inviter={"id": OWNER_ID}),      # somebody else's permanent link
+            dict(own, code="expires", max_age=3600),                  # the bot's, but it expires
+            dict(own, code="limited", max_uses=5),                    # the bot's, but limited
+        ]
+        syncer = self.sync()
+        self.assertEqual(syncer.changes, ["create a permanent invite link to #rules"])
+        self.assertNotIn(syncer.invite_url.rsplit("/", 1)[1], ("byowner", "expires", "limited"))
+
+    def test_the_link_is_in_the_summary(self):
+        summary = self.dir / "summary.md"
+        with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(self.dir / "out")}):
+            code = discord_sync.main(["apply", "--config", str(self.dir / "server.yml"), "--summary-file", str(summary)],
+                                     transport=self.fake)
+        self.assertEqual(code, 0)
+        self.assertIn(f"**Invite link:** https://discord.gg/{self.invites()[0]['code']}", summary.read_text(encoding="utf-8"))
+
+    def test_a_fragment_cannot_set_it(self):
+        self.write("mod/.discord/server.yml", "server:\n  invite_channel: rules\n")
+        with self.assertRaises(ConfigError):
+            load_configs(self.dir / "mod/.discord/server.yml", self.dir / "server.yml")
+
+
 class FragmentTests(SyncTestCase):
     def setUp(self):
         super().setUp()

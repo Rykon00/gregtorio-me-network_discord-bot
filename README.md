@@ -67,6 +67,7 @@ server:                       # guild config only
   rules_channel: rules
   updates_channel: moderators
   system_channel: general
+  invite_channel: welcome     # keeps one permanent invite link to this channel
   suppress_system_messages: [tips]  # any of: join, boost, tips, join_replies
 
 everyone:                     # guild config only; adjusts @everyone, leaves other bits alone
@@ -116,6 +117,13 @@ categories:
 
 Access settings (`read_only`, `private`, `visible_to`, `writers`) set on a channel replace the
 value inherited from its category.
+
+### Invite link
+
+With `server.invite_channel` the tool keeps one invite link that never expires and has no use
+limit, made by the bot, to that channel. The link is printed at the end of every run ("Invite
+link: ..."). It stays the same from run to run. If someone deletes it in Discord, the next run
+makes a new one with a different address, and every place that links the old one has to be updated.
 
 ### Managed messages
 

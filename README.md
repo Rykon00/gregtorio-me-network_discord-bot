@@ -70,6 +70,12 @@ server:                       # guild config only
   invite_channel: welcome     # keeps one permanent invite link to this channel
   suppress_system_messages: [tips]  # any of: join, boost, tips, join_replies
 
+automod:                      # guild config only; Discord's own filters
+  alert_channel: moderators   # blocked messages are reported here
+  exempt_roles: [Maintainer]
+  block_spam: true            # messages Discord classifies as spam
+  block_mention_spam: 6       # messages with more mentions than this (1-50); also stops mention raids
+
 everyone:                     # guild config only; adjusts @everyone, leaves other bits alone
   deny: [mention_everyone]
   allow: []
@@ -117,6 +123,13 @@ categories:
 
 Access settings (`read_only`, `private`, `visible_to`, `writers`) set on a channel replace the
 value inherited from its category.
+
+### AutoMod
+
+`automod` switches on Discord's filters for spam and for mass mentions. A guild can only have one
+rule of each of these kinds, so a rule that exists already (made by hand or by Discord) is
+adjusted, not duplicated. Setting a filter to `false` later leaves its rule as it is: like
+everything else, a rule is never disabled or deleted just because it left the config.
 
 ### Invite link
 
@@ -253,7 +266,8 @@ token.
 ## Not managed (yet)
 
 The server banner, role order, who has which role, onboarding and the welcome screen, AutoMod
-rules, webhooks, emoji. Set these by hand in Discord; the tool does not touch them.
+rules beyond the two spam filters (keyword lists, for example), webhooks, emoji. Set these by hand
+in Discord; the tool does not touch them.
 
 ## The bot
 

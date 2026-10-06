@@ -23,6 +23,13 @@ server:
   invite_channel: welcome          # one permanent invite link; new members land here
   suppress_system_messages: [tips]
 
+# Discord's own filters. A blocked message is not posted; the report goes to the alert channel.
+automod:
+  alert_channel: moderators
+  exempt_roles: [Maintainer]
+  block_spam: true
+  block_mention_spam: 6            # more than six mentions in one message; also stops mention raids
+
 everyone:
   # the same set Discord's "Stop @everyone spam" prompt removes
   deny: [mention_everyone, create_guild_expressions, create_events]

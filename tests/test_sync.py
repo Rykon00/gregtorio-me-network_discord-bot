@@ -327,6 +327,83 @@ class GuildConfigTests(SyncTestCase):
         self.assertIn("Missing Permissions", str(caught.exception))
 
 
+AUTOMOD = """
+automod:
+  alert_channel: moderators
+  exempt_roles: [Maintainer]
+  block_spam: true
+  block_mention_spam: 6
+"""
+
+
+class AutoModTests(SyncTestCase):
+    def setUp(self):
+        super().setUp()
+        self.edit("everyone:\n", AUTOMOD.lstrip("\n") + "everyone:\n")
+
+    def rule(self, trigger_type):
+        [rule] = [r for r in self.fake.automod_rules if r["trigger_type"] == trigger_type]
+        return rule
+
+    def test_creates_both_rules_once(self):
+        planned = self.sync(apply=False)
+        self.assertIn('create AutoMod rule "Block spam"', planned.changes)
+        self.assertIn('create AutoMod rule "Block mention spam"', planned.changes)
+        self.assertEqual(self.fake.mutations(), [])
+
+        self.sync()
+        maintainer = next(r for r in self.fake.roles if r["name"] == "Maintainer")["id"]
+        moderators = self.fake.channel("moderators")["id"]
+        spam, mentions = self.rule(3), self.rule(5)
+        for rule in (spam, mentions):
+            self.assertTrue(rule["enabled"])
+            self.assertEqual(rule["exempt_roles"], [maintainer])
+            self.assertEqual(rule["actions"], [{"type": 1}, {"type": 2, "metadata": {"channel_id": moderators}}])
+        self.assertEqual(mentions["trigger_metadata"],
+                         {"mention_total_limit": 6, "mention_raid_protection_enabled": True})
+        self.assertEqual(self.sync().changes, [])
+
+    def test_an_existing_rule_of_the_kind_is_adjusted_not_duplicated(self):
+        self.fake.automod_rules.append({
+            "id": "777", "name": "Block Mention Spam", "event_type": 1, "trigger_type": 5, "enabled": False,
+            "trigger_metadata": {"mention_total_limit": 20}, "actions": [{"type": 1, "metadata": {}}],
+            "exempt_roles": [], "exempt_channels": ["123"]})
+        syncer = self.sync()
+        self.assertTrue(any(change.startswith('update AutoMod rule "Block Mention Spam"') for change in syncer.changes))
+        rule = self.rule(5)
+        self.assertEqual(rule["id"], "777")
+        self.assertTrue(rule["enabled"])
+        self.assertEqual(rule["trigger_metadata"]["mention_total_limit"], 6)
+        self.assertEqual(rule["exempt_channels"], ["123"])       # what the config does not set stays
+        self.assertEqual(self.sync().changes, [])
+
+    def test_changing_the_limit_updates_the_rule(self):
+        self.sync()
+        self.edit("block_mention_spam: 6", "block_mention_spam: 10")
+        self.assertEqual(self.sync().changes, ['update AutoMod rule "Block mention spam": limits'])
+        self.assertEqual(self.rule(5)["trigger_metadata"]["mention_total_limit"], 10)
+
+    def test_switched_off_rules_are_left_alone(self):
+        self.sync()
+        self.edit("block_spam: true", "block_spam: false")
+        self.assertEqual(self.sync().changes, [])
+        self.assertTrue(self.rule(3)["enabled"])                 # nothing is disabled or deleted implicitly
+
+    def test_validation(self):
+        for old, new in (("block_mention_spam: 6", "block_mention_spam: 99"),
+                         ("block_spam: true", "block_spam: sometimes"),
+                         ("alert_channel: moderators", "alert_chanel: moderators")):
+            self.edit(old, new)
+            with self.assertRaises(ConfigError):
+                load_configs(self.dir / "server.yml")
+            self.edit(new, old)
+
+    def test_a_fragment_cannot_set_it(self):
+        self.write("mod/.discord/server.yml", "automod:\n  block_spam: true\n")
+        with self.assertRaises(ConfigError):
+            load_configs(self.dir / "mod/.discord/server.yml", self.dir / "server.yml")
+
+
 class InviteTests(SyncTestCase):
     def setUp(self):
         super().setUp()

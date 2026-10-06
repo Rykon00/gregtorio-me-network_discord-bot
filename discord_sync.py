@@ -1156,7 +1156,10 @@ class Syncer:
         existing = self.api.request("GET", base) or []
         for rule in wanted:
             rule.update(event_type=1, actions=actions, enabled=True, exempt_roles=exempt)
-            live = next((r for r in existing if r.get("trigger_type") == rule["trigger_type"]), None)
+            same_kind = [r for r in existing if r.get("trigger_type") == rule["trigger_type"]]
+            # prefer the rule this tool made (by name, then by creator) over one Discord lists by default
+            same_kind.sort(key=lambda r: (r.get("name") != rule["name"], r.get("creator_id") != self.me["id"]))
+            live = same_kind[0] if same_kind else None
             if live is None:
                 self._mutate(f"create AutoMod rule \"{rule['name']}\"", "POST", base, rule)
                 continue
@@ -1178,9 +1181,26 @@ class Syncer:
                 changed["trigger_metadata"] = dict(live.get("trigger_metadata") or {}, **metadata)
                 parts.append("limits")
             if changed:
-                self._mutate(
-                    f"update AutoMod rule \"{live.get('name')}\": {', '.join(parts)}", "PATCH", f"{base}/{live['id']}", changed
-                )
+                self._update_automod_rule(base, live, changed, rule, parts)
+
+    def _update_automod_rule(self, base, live, changed, rule, parts):
+        description = f"update AutoMod rule \"{live.get('name')}\": {', '.join(parts)}"
+        if self.apply:
+            try:
+                self.api.request("PATCH", f"{base}/{live['id']}", changed)
+            except ApiError as error:
+                if error.status != 404:
+                    raise SyncError(f"could not {description}: {error}") from None
+                # Discord lists its built-in default rule (the same ID in every server) before the
+                # server has a rule of its own. It cannot be edited; creating the rule replaces it.
+                try:
+                    self.api.request("POST", base, rule)
+                except ApiError as second:
+                    raise SyncError(
+                        f"could not {description}: the listed rule cannot be edited ({error.status}) "
+                        f"and creating one failed: {second}"
+                    ) from None
+        self.changes.append(description)
 
     # -- invite link -------------------------------------------------------
 

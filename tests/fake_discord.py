@@ -54,6 +54,7 @@ class FakeDiscord:
         self.messages = {}
         self.invites = {}  # channel id -> list of invite objects
         self.automod_rules = []
+        self.automod_default = None  # a built-in rule Discord lists but does not let anyone edit
         text = self._add_channel({"name": "Text Channels", "type": 4, "position": 0})
         voice = self._add_channel({"name": "Voice Channels", "type": 4, "position": 1})
         general = self._add_channel({"name": "general", "type": 0, "parent_id": text["id"], "position": 0})
@@ -177,7 +178,11 @@ class FakeDiscord:
                 return self._patch_guild(body, method, path)
         if path == f"{guild}/auto-moderation/rules":
             if method == "GET":
-                return self.automod_rules
+                listed = list(self.automod_rules)
+                default = self.automod_default
+                if default and not any(r["trigger_type"] == default["trigger_type"] for r in listed):
+                    listed.append(default)
+                return listed
             if method == "POST":
                 if body["trigger_type"] in (3, 5) and any(r["trigger_type"] == body["trigger_type"] for r in self.automod_rules):
                     self._fail(400, method, path, "Maximum number of rules of this trigger type reached")

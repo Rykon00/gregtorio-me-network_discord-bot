@@ -43,6 +43,7 @@ class FakeDiscord:
             "preferred_locale": "en-US",
             "description": None,
             "icon": None,
+            "owner_id": OWNER_ID,
         }
         self.roles = [
             {"id": GUILD_ID, "name": "@everyone", "permissions": DEFAULT_EVERYONE, "color": 0,
@@ -50,6 +51,8 @@ class FakeDiscord:
             {"id": self._id(), "name": "sync-bot", "permissions": "8", "color": 0,
              "hoist": False, "mentionable": False, "managed": True, "position": 1},
         ]
+        self.members = {OWNER_ID: {"user": {"id": OWNER_ID}, "roles": []},
+                        BOT_ID: {"user": {"id": BOT_ID}, "roles": [self.roles[1]["id"]]}}
         self.channels = []
         self.messages = {}
         self.invites = {}  # channel id -> list of invite objects
@@ -208,8 +211,33 @@ class FakeDiscord:
                 role = {"id": self._id(), "managed": False, "position": 1, "color": 0, "hoist": False,
                         "mentionable": False, "permissions": "0"}
                 role.update(body)
+                role["position"] = 1  # a new role goes to the bottom, the others move up
+                for other in self.roles:
+                    if other["id"] != GUILD_ID:
+                        other["position"] += 1
                 self.roles.append(role)
                 return role
+            if method == "PATCH":
+                top = self._bot_top()
+                for move in body:
+                    role = self._role(move["id"], method, path)
+                    if role["position"] >= top or move["position"] >= top or move["position"] < 1:
+                        self._fail(403, method, path, "Missing Permissions", 50013)
+                for move in body:
+                    self._role(move["id"], method, path)["position"] = move["position"]
+                return self.roles
+        match = re.fullmatch(rf"{guild}/members/(\d+)", path)
+        if match and method == "GET":
+            return self._member(match.group(1), method, path)
+        match = re.fullmatch(rf"{guild}/members/(\d+)/roles/(\d+)", path)
+        if match and method == "PUT":
+            member = self._member(match.group(1), method, path)
+            role = self._role(match.group(2), method, path)
+            if role["managed"] or role["position"] >= self._bot_top():
+                self._fail(403, method, path, "Missing Permissions", 50013)
+            if role["id"] not in member["roles"]:
+                member["roles"].append(role["id"])
+            return None
         match = re.fullmatch(rf"{guild}/roles/(\d+)", path)
         if match and method == "PATCH":
             for role in self.roles:
@@ -308,6 +336,21 @@ class FakeDiscord:
         if body.get("parent_id") and not any(c["id"] == body["parent_id"] for c in self.channels):
             self._fail(400, method, path, "Unknown parent category")
         return self._add_channel(body)
+
+    def _bot_top(self):
+        mine = self.members[BOT_ID]["roles"]
+        return max(r["position"] for r in self.roles if r["id"] in mine and r["managed"])
+
+    def _role(self, role_id, method, path):
+        for role in self.roles:
+            if role["id"] == role_id:
+                return role
+        self._fail(404, method, path, "Unknown Role", 10011)
+
+    def _member(self, user_id, method, path):
+        if user_id not in self.members:
+            self._fail(404, method, path, "Unknown Member", 10007)
+        return self.members[user_id]
 
     def _check_automod(self, rule, method, path):
         if not rule.get("name") or rule.get("event_type") != 1 or not rule.get("actions"):

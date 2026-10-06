@@ -53,6 +53,7 @@ class FakeDiscord:
         self.channels = []
         self.messages = {}
         self.invites = {}  # channel id -> list of invite objects
+        self.automod_rules = []
         text = self._add_channel({"name": "Text Channels", "type": 4, "position": 0})
         voice = self._add_channel({"name": "Voice Channels", "type": 4, "position": 1})
         general = self._add_channel({"name": "general", "type": 0, "parent_id": text["id"], "position": 0})
@@ -174,6 +175,27 @@ class FakeDiscord:
                 return self.guild
             if method == "PATCH":
                 return self._patch_guild(body, method, path)
+        if path == f"{guild}/auto-moderation/rules":
+            if method == "GET":
+                return self.automod_rules
+            if method == "POST":
+                if body["trigger_type"] in (3, 5) and any(r["trigger_type"] == body["trigger_type"] for r in self.automod_rules):
+                    self._fail(400, method, path, "Maximum number of rules of this trigger type reached")
+                rule = {"id": self._id(), "guild_id": GUILD_ID, "creator_id": BOT_ID, "enabled": False,
+                        "trigger_metadata": {}, "exempt_roles": [], "exempt_channels": []}
+                rule.update(body)
+                self._check_automod(rule, method, path)
+                self.automod_rules.append(rule)
+                return rule
+        match = re.fullmatch(rf"{guild}/auto-moderation/rules/(\d+)", path)
+        if match and method == "PATCH":
+            for rule in self.automod_rules:
+                if rule["id"] == match.group(1):
+                    candidate = dict(rule, **body)
+                    self._check_automod(candidate, method, path)
+                    rule.update(body)
+                    return rule
+            self._fail(404, method, path, "Unknown rule", 10066)
         if path == f"{guild}/roles":
             if method == "GET":
                 return self.roles
@@ -281,6 +303,19 @@ class FakeDiscord:
         if body.get("parent_id") and not any(c["id"] == body["parent_id"] for c in self.channels):
             self._fail(400, method, path, "Unknown parent category")
         return self._add_channel(body)
+
+    def _check_automod(self, rule, method, path):
+        if not rule.get("name") or rule.get("event_type") != 1 or not rule.get("actions"):
+            self._fail(400, method, path, "Invalid AutoMod rule")
+        channel_ids = {c["id"] for c in self.channels}
+        role_ids = {r["id"] for r in self.roles}
+        for action in rule["actions"]:
+            if action["type"] == 2 and (action.get("metadata") or {}).get("channel_id") not in channel_ids:
+                self._fail(400, method, path, "Unknown alert channel")
+        if not set(rule.get("exempt_roles") or []) <= role_ids:
+            self._fail(400, method, path, "Unknown exempt role")
+        if rule["trigger_type"] == 5 and not 1 <= rule["trigger_metadata"].get("mention_total_limit", 0) <= 50:
+            self._fail(400, method, path, "Invalid mention limit")
 
     def _picture(self, uri, method, path):
         """Accept a data URI like Discord does and return a stand-in for the stored hash."""

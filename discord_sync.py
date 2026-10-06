@@ -124,7 +124,10 @@ TAG_NAME_LIMIT = 20
 READ_ONLY_DENY = ("send_messages", "send_messages_in_threads", "create_public_threads", "create_private_threads")
 WRITER_ALLOW = ("send_messages", "send_messages_in_threads", "create_public_threads")
 
-TOP_KEYS = {"guild_id", "server", "everyone", "roles", "categories"}
+TOP_KEYS = {"guild_id", "server", "everyone", "automod", "roles", "categories"}
+AUTOMOD_KEYS = {"alert_channel", "exempt_roles", "block_spam", "block_mention_spam"}
+AUTOMOD_SPAM, AUTOMOD_MENTION_SPAM = 3, 5          # trigger types
+AUTOMOD_BLOCK, AUTOMOD_ALERT = 1, 2                # action types
 SERVER_KEYS = {
     "name", "description", "community", "rules_channel", "updates_channel", "system_channel", "invite_channel",
     "suppress_system_messages", "verification_level", "default_notifications", "content_filter", "locale",
@@ -272,6 +275,7 @@ class Config:
         self.guild_id = str(raw["guild_id"]) if raw.get("guild_id") is not None else None
         self.server = raw.get("server")
         self.everyone = raw.get("everyone")
+        self.automod = raw.get("automod")
         self.roles = _list(raw.get("roles"), "roles")
         self.categories = _list(raw.get("categories"), "categories")
         self._validate()
@@ -284,11 +288,21 @@ class Config:
         if self.guild_id is not None and not re.fullmatch(r"\d{15,22}", self.guild_id):
             raise ConfigError("guild_id must be the numeric server ID")
         if not self.is_guild_config:
-            for key, value in (("server", self.server), ("everyone", self.everyone)):
+            for key, value in (("server", self.server), ("everyone", self.everyone), ("automod", self.automod)):
                 if value is not None:
                     raise ConfigError(f"'{key}' is only allowed in the guild config (the file with guild_id)")
         if self.server is not None:
             self._validate_server()
+        if self.automod is not None:
+            _check_keys(self.automod, AUTOMOD_KEYS, "automod")
+            for role in _list(self.automod.get("exempt_roles"), "automod.exempt_roles"):
+                if not isinstance(role, str):
+                    raise ConfigError("automod.exempt_roles must be a list of role names")
+            if not isinstance(self.automod.get("block_spam", False), bool):
+                raise ConfigError("automod.block_spam must be true or false")
+            limit = self.automod.get("block_mention_spam", False)
+            if limit is not False and (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50):
+                raise ConfigError("automod.block_mention_spam must be a number of mentions from 1 to 50, or false")
         if self.everyone is not None:
             _check_keys(self.everyone, {"allow", "deny"}, "everyone")
             permission_bits(self.everyone.get("allow"), "everyone.allow")
@@ -573,6 +587,7 @@ class Syncer:
         self._sync_deletions()
         self._sync_positions()
         self._sync_messages()
+        self._sync_automod()
         self._sync_invite()
         self._report_unmanaged()
 
@@ -1105,6 +1120,67 @@ class Syncer:
             self._mutate(f"pin message {label}", "PUT", f"{base}/pins/{live['id']}")
         elif not pin and live.get("pinned"):
             self._mutate(f"unpin message {label}", "DELETE", f"{base}/pins/{live['id']}")
+
+    # -- AutoMod -----------------------------------------------------------
+
+    def _sync_automod(self):
+        """Discord's own spam filters. A guild has at most one rule of each of these kinds,
+        so an existing rule of the kind is adjusted instead of adding a second one."""
+        settings = self.config.automod
+        if not settings:
+            return
+        actions = [{"type": AUTOMOD_BLOCK}]
+        if settings.get("alert_channel"):
+            channel_id = self._channel_id(settings["alert_channel"], "automod.alert_channel")
+            actions.append({"type": AUTOMOD_ALERT, "metadata": {"channel_id": channel_id}})
+        exempt = sorted(self._role_id(name) for name in settings.get("exempt_roles") or [])
+        wanted = []
+        if settings.get("block_spam"):
+            wanted.append({"name": "Block spam", "trigger_type": AUTOMOD_SPAM})
+        if settings.get("block_mention_spam"):
+            wanted.append({
+                "name": "Block mention spam",
+                "trigger_type": AUTOMOD_MENTION_SPAM,
+                "trigger_metadata": {
+                    "mention_total_limit": int(settings["block_mention_spam"]),
+                    "mention_raid_protection_enabled": True,
+                },
+            })
+        if not wanted:
+            return
+
+        def action_keys(items):
+            return sorted((a["type"], (a.get("metadata") or {}).get("channel_id")) for a in items or [])
+
+        base = f"/guilds/{self.guild_id}/auto-moderation/rules"
+        existing = self.api.request("GET", base) or []
+        for rule in wanted:
+            rule.update(event_type=1, actions=actions, enabled=True, exempt_roles=exempt)
+            live = next((r for r in existing if r.get("trigger_type") == rule["trigger_type"]), None)
+            if live is None:
+                self._mutate(f"create AutoMod rule \"{rule['name']}\"", "POST", base, rule)
+                continue
+            changed, parts = {}, []
+            if live.get("name") != rule["name"]:
+                changed["name"] = rule["name"]
+                parts.append("name")
+            if not live.get("enabled"):
+                changed["enabled"] = True
+                parts.append("enable")
+            if action_keys(live.get("actions")) != action_keys(actions):
+                changed["actions"] = actions
+                parts.append("actions")
+            if sorted(live.get("exempt_roles") or []) != exempt:
+                changed["exempt_roles"] = exempt
+                parts.append("exempt roles")
+            metadata = rule.get("trigger_metadata") or {}
+            if any((live.get("trigger_metadata") or {}).get(key) != value for key, value in metadata.items()):
+                changed["trigger_metadata"] = dict(live.get("trigger_metadata") or {}, **metadata)
+                parts.append("limits")
+            if changed:
+                self._mutate(
+                    f"update AutoMod rule \"{live.get('name')}\": {', '.join(parts)}", "PATCH", f"{base}/{live['id']}", changed
+                )
 
     # -- invite link -------------------------------------------------------
 

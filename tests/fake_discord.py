@@ -52,6 +52,7 @@ class FakeDiscord:
         ]
         self.channels = []
         self.messages = {}
+        self.invites = {}  # channel id -> list of invite objects
         text = self._add_channel({"name": "Text Channels", "type": 4, "position": 0})
         voice = self._add_channel({"name": "Voice Channels", "type": 4, "position": 1})
         general = self._add_channel({"name": "general", "type": 0, "parent_id": text["id"], "position": 0})
@@ -214,6 +215,22 @@ class FakeDiscord:
                     if child.get("parent_id") == channel["id"]:
                         child["parent_id"] = None
                 return channel
+        match = re.fullmatch(r"/channels/(\d+)/invites", path)
+        if match:
+            channel = self._channel(match.group(1), method, path)
+            invites = self.invites.setdefault(channel["id"], [])
+            if method == "GET":
+                return invites
+            if method == "POST":
+                wanted = {"max_age": body.get("max_age", 86400), "max_uses": body.get("max_uses", 0),
+                          "temporary": body.get("temporary", False)}
+                if not body.get("unique"):
+                    for invite in invites:
+                        if invite["inviter"]["id"] == BOT_ID and all(invite[k] == v for k, v in wanted.items()):
+                            return invite
+                invite = dict(wanted, code=f"code{self._id()[-6:]}", inviter={"id": BOT_ID}, channel={"id": channel["id"]})
+                invites.append(invite)
+                return invite
         match = re.fullmatch(r"/channels/(\d+)/messages", path)
         if match:
             channel = self._channel(match.group(1), method, path)

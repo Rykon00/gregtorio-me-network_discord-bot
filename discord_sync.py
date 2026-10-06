@@ -126,7 +126,7 @@ WRITER_ALLOW = ("send_messages", "send_messages_in_threads", "create_public_thre
 
 TOP_KEYS = {"guild_id", "server", "everyone", "roles", "categories"}
 SERVER_KEYS = {
-    "name", "description", "community", "rules_channel", "updates_channel", "system_channel",
+    "name", "description", "community", "rules_channel", "updates_channel", "system_channel", "invite_channel",
     "suppress_system_messages", "verification_level", "default_notifications", "content_filter", "locale",
 }
 ROLE_KEYS = {"name", "previous_names", "color", "hoist", "mentionable", "permissions"}
@@ -529,6 +529,7 @@ class Syncer:
         self.changes = []
         self.notes = []
         self.deletions = 0
+        self.invite_url = None
         self.me = None
         self.guild = None
         self.roles = []
@@ -572,6 +573,7 @@ class Syncer:
         self._sync_deletions()
         self._sync_positions()
         self._sync_messages()
+        self._sync_invite()
         self._report_unmanaged()
 
     def _load(self):
@@ -1104,6 +1106,29 @@ class Syncer:
         elif not pin and live.get("pinned"):
             self._mutate(f"unpin message {label}", "DELETE", f"{base}/pins/{live['id']}")
 
+    # -- invite link -------------------------------------------------------
+
+    def _sync_invite(self):
+        """Keep one permanent invite link, made by the bot, to server.invite_channel."""
+        name = (self.config.server or {}).get("invite_channel")
+        if not name:
+            return
+        channel_id = self._channel_id(name, "server.invite_channel")
+        invite = None
+        if not self._is_new(channel_id):
+            for candidate in self.api.request("GET", f"/channels/{channel_id}/invites") or []:
+                permanent = not candidate.get("max_age") and not candidate.get("max_uses") and not candidate.get("temporary")
+                if permanent and (candidate.get("inviter") or {}).get("id") == self.me["id"]:
+                    invite = candidate
+                    break
+        if invite is None:
+            body = {"max_age": 0, "max_uses": 0, "temporary": False, "unique": False}
+            invite = self._mutate(
+                f"create a permanent invite link to #{name}", "POST", f"/channels/{channel_id}/invites", body
+            )
+        if invite:
+            self.invite_url = f"https://discord.gg/{invite['code']}"
+
     # -- reporting ---------------------------------------------------------
 
     def _report_unmanaged(self):
@@ -1137,6 +1162,8 @@ def render_summary(syncer, config, mode, error=None):
         lines += [f"- {change}" for change in syncer.changes]
     elif error is None:
         lines.append("**No changes.** The server matches the config.")
+    if syncer.invite_url:
+        lines += ["", f"**Invite link:** {syncer.invite_url}"]
     if syncer.notes:
         lines += ["", "**Notes**", ""]
         lines += [f"- {note}" for note in syncer.notes]

@@ -20,6 +20,7 @@ server:
   rules_channel: rules
   updates_channel: moderators      # Discord posts its own notices for admins here
   system_channel: general          # "X joined the server" messages
+  invite_channel: welcome          # one permanent invite link; new members land here
   suppress_system_messages: [tips]
 
 everyone:

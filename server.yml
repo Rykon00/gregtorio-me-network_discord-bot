@@ -34,10 +34,13 @@ everyone:
   # the same set Discord's "Stop @everyone spam" prompt removes
   deny: [mention_everyone, create_guild_expressions, create_events]
 
+# Hoisted roles are the groups of the member list, shown in the order they are listed here.
+# Everyone without one of them appears under "Online" / "Offline".
 roles:
   - name: Maintainer
     color: "#E67E22"
     hoist: true
+    members: [owner]
     permissions:
       - kick_members
       - ban_members
@@ -53,6 +56,11 @@ roles:
     hoist: true
   - name: Tester
     color: "#2ECC71"
+    hoist: true
+  - name: Bot
+    color: "#95A5A6"
+    hoist: true
+    members: [bot]
 
 categories:
   - name: Information

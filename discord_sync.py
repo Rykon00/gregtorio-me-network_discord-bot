@@ -132,7 +132,7 @@ SERVER_KEYS = {
     "name", "description", "community", "rules_channel", "updates_channel", "system_channel", "invite_channel",
     "suppress_system_messages", "verification_level", "default_notifications", "content_filter", "locale",
 }
-ROLE_KEYS = {"name", "previous_names", "color", "hoist", "mentionable", "permissions"}
+ROLE_KEYS = {"name", "previous_names", "color", "hoist", "mentionable", "permissions", "members"}
 ACCESS_KEYS = {"read_only", "private", "visible_to", "writers", "overwrites"}
 CATEGORY_KEYS = {"name", "previous_names", "position", "channels", "delete"} | ACCESS_KEYS
 CHANNEL_KEYS = {
@@ -318,6 +318,9 @@ class Config:
             seen_roles.add(name)
             parse_color(role.get("color"), where)
             permission_bits(role.get("permissions"), where)
+            for member in _list(role.get("members"), f"{where}.members"):
+                if member not in ("owner", "bot") and not re.fullmatch(r"\d{15,22}", str(member)):
+                    raise ConfigError(f"{where}: members are 'owner', 'bot' or numeric user IDs, got '{member}'")
 
         seen_categories = set()
         seen_channels = {}
@@ -549,6 +552,7 @@ class Syncer:
         self.roles = []
         self.channels = []
         self._claimed = set()
+        self._roles_created = False
         self._categories = {}  # config category name -> live category
         self._managed = {}  # (group, config channel name) -> live channel
         self._new = 0
@@ -579,6 +583,8 @@ class Syncer:
     def run(self):
         self._load()
         self._sync_roles()
+        self._sync_role_order()
+        self._sync_role_members()
         self._sync_everyone()
         self._sync_categories()
         self._sync_channels(late=False)
@@ -693,7 +699,12 @@ class Syncer:
                 created = self._mutate(
                     f"create role `{entry['name']}`", "POST", f"/guilds/{self.guild_id}/roles", desired, simulated
                 )
+                # Discord puts a new role at the bottom and moves the others up by one
+                for role in self.roles:
+                    if role["id"] != self.guild_id:
+                        role["position"] = role.get("position", 0) + 1
                 self.roles.append(created)
+                self._roles_created = True
                 continue
             changed = {
                 key: value for key, value in desired.items()
@@ -714,6 +725,51 @@ class Syncer:
                 "PATCH", f"/guilds/{self.guild_id}/roles/{live['id']}", changed, dict(live, **changed),
             )
             live.update(updated)
+
+    def _sync_role_order(self):
+        """The roles of this config in the order they are listed, highest first. Hoisted roles
+        are the groups of the member list, and Discord shows them in this order."""
+        names = [entry["name"] for entry in self.config.roles]
+        if len(names) < 2:
+            return
+        if self.apply and self._roles_created:
+            self.roles = self.api.request("GET", f"/guilds/{self.guild_id}/roles")
+        wanted = [next(r for r in self.roles if r["id"] == self._role_id(name)) for name in names]
+        current = sorted(wanted, key=lambda r: (-r.get("position", 0), _snowflake(r["id"])))
+        if [r["id"] for r in current] == [r["id"] for r in wanted]:
+            return
+        # reuse the positions these roles hold, so nothing moves relative to other roles
+        slots = sorted({r.get("position", 0) for r in wanted}, reverse=True)
+        if len(slots) < len(wanted):
+            low = min(slots)
+            slots = list(range(low + len(wanted) - 1, low - 1, -1))
+        moves = [{"id": role["id"], "position": slot} for role, slot in zip(wanted, slots) if role.get("position") != slot]
+        self._mutate(f"reorder roles: {' > '.join(names)}", "PATCH", f"/guilds/{self.guild_id}/roles", moves)
+        for role, slot in zip(wanted, slots):
+            role["position"] = slot
+
+    def _sync_role_members(self):
+        """Give roles to the members a role lists. Nobody ever loses a role here."""
+        held = {}
+        for entry in self.config.roles:
+            for who in entry.get("members") or []:
+                user_id = {"owner": self.guild.get("owner_id"), "bot": self.me["id"]}.get(who, str(who))
+                if user_id not in held:
+                    try:
+                        held[user_id] = set(self.api.request("GET", f"/guilds/{self.guild_id}/members/{user_id}")["roles"])
+                    except ApiError as error:
+                        if error.status != 404:
+                            raise
+                        raise SyncError(f"role '{entry['name']}': {who} is not a member of the server") from None
+                role_id = self._role_id(entry["name"])
+                if role_id in held[user_id]:
+                    continue
+                label = {"owner": "the server owner", "bot": "the bot"}.get(who, f"member {who}")
+                self._mutate(
+                    f"give role `{entry['name']}` to {label}",
+                    "PUT", f"/guilds/{self.guild_id}/members/{user_id}/roles/{role_id}",
+                )
+                held[user_id].add(role_id)
 
     def _sync_everyone(self):
         settings = self.config.everyone

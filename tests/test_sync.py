@@ -327,6 +327,94 @@ class GuildConfigTests(SyncTestCase):
         self.assertIn("Missing Permissions", str(caught.exception))
 
 
+THREE_ROLES = """roles:
+  - name: Maintainer
+    color: "#E67E22"
+    hoist: true
+    permissions: [kick_members, manage_messages]
+    members: [owner]
+  - name: Tester
+    hoist: true
+  - name: Bot
+    hoist: true
+    members: [bot]
+"""
+
+
+class MemberListTests(SyncTestCase):
+    """Hoisted roles are the groups of the member list; their order is the order in the file."""
+
+    def setUp(self):
+        super().setUp()
+        text = (self.dir / "server.yml").read_text(encoding="utf-8")
+        start, end = text.index("roles:\n"), text.index("categories:\n")
+        (self.dir / "server.yml").write_text(text[:start] + THREE_ROLES + text[end:], encoding="utf-8")
+
+    def order(self):
+        mine = [r for r in self.fake.roles if r["name"] in ("Maintainer", "Tester", "Bot")]
+        return [r["name"] for r in sorted(mine, key=lambda r: -r["position"])]
+
+    def role_id(self, name):
+        return next(r["id"] for r in self.fake.roles if r["name"] == name)
+
+    def test_new_roles_come_out_in_file_order_and_members_get_them(self):
+        planned = self.sync(apply=False).changes
+        self.assertEqual(self.fake.mutations(), [])
+        applied = self.sync().changes
+        self.assertEqual(planned, applied)
+        self.assertEqual(self.order(), ["Maintainer", "Tester", "Bot"])
+        self.assertIn("give role `Maintainer` to the server owner", applied)
+        self.assertIn("give role `Bot` to the bot", applied)
+        self.assertIn(self.role_id("Maintainer"), self.fake.members[OWNER_ID]["roles"])
+        self.assertIn(self.role_id("Bot"), self.fake.members[BOT_ID]["roles"])
+        self.assertEqual(self.sync().changes, [])
+
+    def test_a_new_order_in_the_file_moves_the_roles(self):
+        self.sync()
+        bot_role_position = self.fake.roles[1]["position"]
+        self.edit("  - name: Tester\n    hoist: true\n  - name: Bot\n    hoist: true\n    members: [bot]\n",
+                  "  - name: Bot\n    hoist: true\n    members: [bot]\n  - name: Tester\n    hoist: true\n")
+        syncer = self.sync()
+        self.assertEqual(syncer.changes, ["reorder roles: Maintainer > Bot > Tester"])
+        self.assertEqual(self.order(), ["Maintainer", "Bot", "Tester"])
+        self.assertEqual(self.fake.roles[1]["position"], bot_role_position)   # the bot's own role did not move
+        self.assertEqual(self.sync().changes, [])
+
+    def test_a_role_added_later_lands_where_the_file_puts_it(self):
+        self.sync()
+        self.edit("  - name: Tester\n", "  - name: Contributor\n    hoist: true\n  - name: Tester\n")
+        planned = self.sync(apply=False).changes
+        applied = self.sync().changes
+        self.assertEqual(planned, applied)
+        mine = [r for r in self.fake.roles if r["name"] in ("Maintainer", "Contributor", "Tester", "Bot")]
+        self.assertEqual([r["name"] for r in sorted(mine, key=lambda r: -r["position"])],
+                         ["Maintainer", "Contributor", "Tester", "Bot"])
+        self.assertEqual(self.sync().changes, [])
+
+    def test_nobody_loses_a_role(self):
+        self.sync()
+        self.fake.members["100000000000000009"] = {"user": {"id": "100000000000000009"}, "roles": [self.role_id("Tester")]}
+        self.edit("    members: [owner]\n", "")
+        self.assertEqual(self.sync().changes, [])
+        self.assertIn(self.role_id("Maintainer"), self.fake.members[OWNER_ID]["roles"])
+        self.assertIn(self.role_id("Tester"), self.fake.members["100000000000000009"]["roles"])
+
+    def test_members_by_id_and_unknown_members(self):
+        self.fake.members["100000000000000009"] = {"user": {"id": "100000000000000009"}, "roles": []}
+        self.edit("  - name: Tester\n    hoist: true\n", "  - name: Tester\n    hoist: true\n    members: ['100000000000000009']\n")
+        syncer = self.sync()
+        self.assertIn("give role `Tester` to member 100000000000000009", syncer.changes)
+        self.edit("members: ['100000000000000009']", "members: ['100000000000000010']")
+        with self.assertRaises(SyncError) as caught:
+            self.sync()
+        self.assertIn("is not a member", str(caught.exception))
+
+    def test_member_values_are_validated(self):
+        self.edit("members: [owner]", "members: [everyone]")
+        with self.assertRaises(ConfigError):
+            load_configs(self.dir / "server.yml")
+
+
 AUTOMOD = """
 automod:
   alert_channel: moderators

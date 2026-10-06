@@ -80,13 +80,14 @@ everyone:                     # guild config only; adjusts @everyone, leaves oth
   deny: [mention_everyone]
   allow: []
 
-roles:
+roles:                        # listed highest first; this is also the order of the member list groups
   - name: Maintainer
     previous_names: []
     color: "#E67E22"
     hoist: true               # shown as its own group in the member list
     mentionable: false
     permissions: [kick_members, manage_messages]   # lowercase Discord permission names
+    members: [owner]          # who gets the role: owner, bot, or numeric user IDs
 
 categories:
   - name: Information
@@ -123,6 +124,16 @@ categories:
 
 Access settings (`read_only`, `private`, `visible_to`, `writers`) set on a channel replace the
 value inherited from its category.
+
+### Roles and the member list
+
+The groups in the member list are the roles with `hoist: true`, in the order the roles are listed
+in the file; members without such a role appear under "Online" and "Offline". The tool keeps the
+listed roles in that order among themselves and does not move any other role.
+
+`members` gives a role to people: `owner`, `bot` or a numeric user ID. This only ever adds. Taking
+a name out of the list, or giving someone a role by hand in Discord, changes nothing: nobody loses
+a role through the tool. Everything else about who has which role stays manual.
 
 ### AutoMod
 
@@ -265,8 +276,8 @@ token.
 
 ## Not managed (yet)
 
-The server banner, role order, who has which role, onboarding and the welcome screen, AutoMod
-rules beyond the two spam filters (keyword lists, for example), webhooks, emoji. Set these by hand
+The server banner, who has which role beyond the `members` lists, onboarding and the welcome
+screen, AutoMod rules beyond the two spam filters (keyword lists, for example), webhooks, emoji. Set these by hand
 in Discord; the tool does not touch them.
 
 ## The bot

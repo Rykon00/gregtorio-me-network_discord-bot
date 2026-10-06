@@ -377,6 +377,37 @@ class AutoModTests(SyncTestCase):
         self.assertEqual(rule["exempt_channels"], ["123"])       # what the config does not set stays
         self.assertEqual(self.sync().changes, [])
 
+    def test_discords_default_rule_is_replaced_by_a_real_one(self):
+        # Discord lists a built-in mention spam rule that answers 404 to every edit.
+        self.fake.automod_default = {
+            "id": "1030554520465440818", "name": "Block Mention Spam", "event_type": 1, "trigger_type": 5,
+            "enabled": True, "trigger_metadata": {"mention_total_limit": 20}, "actions": [{"type": 1, "metadata": {}}],
+            "exempt_roles": [], "exempt_channels": [], "creator_id": "1008776202191634432"}
+        planned = self.sync(apply=False).changes
+        applied = self.sync().changes
+        self.assertEqual(planned, applied)
+        self.assertTrue(any(c.startswith('update AutoMod rule "Block Mention Spam"') for c in applied))
+        rule = self.rule(5)
+        self.assertNotEqual(rule["id"], "1030554520465440818")
+        self.assertEqual(rule["name"], "Block mention spam")
+        self.assertEqual(rule["trigger_metadata"]["mention_total_limit"], 6)
+        self.assertEqual(self.sync().changes, [])
+
+    def test_other_errors_on_an_update_are_reported(self):
+        self.sync()
+        self.edit("block_mention_spam: 6", "block_mention_spam: 10")
+        original = self.fake._route
+
+        def broken(method, path, body, query):
+            if method == "PATCH" and "auto-moderation" in path:
+                self.fake._fail(403, method, path, "Missing Permissions", 50013)
+            return original(method, path, body, query)
+
+        self.fake._route = broken
+        with self.assertRaises(SyncError) as caught:
+            self.sync()
+        self.assertIn("Missing Permissions", str(caught.exception))
+
     def test_changing_the_limit_updates_the_rule(self):
         self.sync()
         self.edit("block_mention_spam: 6", "block_mention_spam: 10")

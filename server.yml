@@ -19,9 +19,9 @@ server:
   community: true                  # needed for announcement channels
   rules_channel: rules
   updates_channel: moderators      # Discord posts its own notices for admins here
-  system_channel: general          # "X joined the server" messages
+  system_channel: joins            # "X joined the server" and boost messages
   invite_channel: welcome          # one permanent invite link; new members land here
-  suppress_system_messages: [tips]
+  suppress_system_messages: [tips, join_replies]  # no "Wave to say hi!" buttons
 
 # Discord's own filters. A blocked message is not posted; the report goes to the alert channel.
 automod:
@@ -87,6 +87,9 @@ categories:
         topic: Talk about Factorio, the mods and everything around them.
       - name: showcase
         topic: Screenshots and videos of your factories.
+      - name: joins
+        topic: Discord's welcome and boost messages. Nothing to read here.
+        read_only: true
 
   # positions 20-79 are left free for the per-mod categories
 

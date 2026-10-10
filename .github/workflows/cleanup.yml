@@ -1,0 +1,43 @@
+# Deletes Discord's "X joined the server" messages from a channel, by hand only.
+# Starts as a dry run that lists what it would delete.
+name: Discord cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel name without #
+        type: string
+        default: general
+      delete:
+        description: Really delete the join messages (otherwise only list them)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Clean up
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          DELETE: ${{ inputs.delete }}
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          args=()
+          [ "$DELETE" = true ] && args+=(--delete)
+          status=0
+          python discord_cleanup.py --guild-config server.yml --channel "$CHANNEL" \
+            --summary-file "$RUNNER_TEMP/cleanup.md" "${args[@]}" || status=$?
+          [ -f "$RUNNER_TEMP/cleanup.md" ] && cat "$RUNNER_TEMP/cleanup.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

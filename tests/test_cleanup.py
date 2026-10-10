@@ -36,3 +36,12 @@ class CleanupTest(unittest.TestCase):
         discord_cleanup.cleanup(self.stub, "1", "general", delete=True)
         self.assertEqual(len(self.stub.deleted), 150)
         self.assertTrue(all(int(i) % 2 for i in self.stub.deleted))
+
+
+class WaveTest(unittest.TestCase):
+    def test_orphan_wave_is_matched_but_other_replies_are_not(self):
+        wave = {"id": "9", "type": 19, "sticker_items": [{"id": "1"}], "content": "", "referenced_message": None}
+        self.assertTrue(discord_cleanup.is_orphan_wave(wave))
+        self.assertFalse(discord_cleanup.is_orphan_wave({**wave, "content": "hi"}))
+        self.assertFalse(discord_cleanup.is_orphan_wave({**wave, "referenced_message": {"id": "2"}}))
+        self.assertFalse(discord_cleanup.is_orphan_wave({**wave, "sticker_items": []}))

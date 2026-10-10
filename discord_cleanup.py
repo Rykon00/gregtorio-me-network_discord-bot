@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""One-off cleanup: delete Discord's "X joined the server" messages from a channel.
+"""One-off cleanup: delete Discord's "X joined the server" messages from a channel,
+together with the "Wave to say hi!" sticker replies whose join message is gone.
 
     discord_cleanup.py --guild-config server.yml --channel general [--delete]
 
-Only messages of the type "user join" are touched, never anything a person wrote.
+Only messages of the type "user join" and sticker-only replies to a deleted message
+are touched, never anything else a person wrote.
 Without ``--delete`` it only lists what it would remove. Deleted messages cannot
 be restored. The bot token is read from DISCORD_BOT_TOKEN.
 """
@@ -18,6 +20,7 @@ from pathlib import Path
 from discord_sync import ApiError, Config, ConfigError, HttpTransport, SyncError
 
 USER_JOIN = 7
+REPLY = 19
 
 
 class CleanupError(Exception):
@@ -32,8 +35,14 @@ def find_channel(transport, guild_id, name):
     return matches[0]["id"]
 
 
+def is_orphan_wave(message):
+    """A sticker-only reply whose original message was deleted (a wave at a removed join message)."""
+    return (message.get("type") == REPLY and message.get("sticker_items")
+            and not message.get("content") and not message.get("referenced_message"))
+
+
 def join_messages(transport, channel_id):
-    """All user-join messages of the channel, newest first."""
+    """All user-join messages and orphaned wave replies of the channel, newest first."""
     found, before = [], None
     while True:
         query = {"limit": 100}
@@ -42,7 +51,7 @@ def join_messages(transport, channel_id):
         page = transport.request("GET", f"/channels/{channel_id}/messages", query=query)
         if not page:
             return found
-        found += [m for m in page if m.get("type") == USER_JOIN]
+        found += [m for m in page if m.get("type") == USER_JOIN or is_orphan_wave(m)]
         before = page[-1]["id"]
 
 
@@ -82,7 +91,7 @@ def main(argv=None, transport=None):
     except (CleanupError, ConfigError, SyncError, ApiError) as error:
         return finish(1, f"## Discord cleanup\n\n**Failed:** {error}")
     verb = "Deleted" if args.delete else "Would delete"
-    lines = [f"## Discord cleanup\n\n{verb} {len(messages)} join message(s) in #{args.channel}."]
+    lines = [f"## Discord cleanup\n\n{verb} {len(messages)} join message(s) and wave(s) in #{args.channel}."]
     if messages:
         names = ", ".join(sorted({m["author"].get("global_name") or m["author"]["username"] for m in messages}))
         lines.append(f"\nMembers: {names}")

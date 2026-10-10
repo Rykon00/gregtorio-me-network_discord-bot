@@ -21,7 +21,7 @@ server:
   updates_channel: moderators      # Discord posts its own notices for admins here
   system_channel: joins            # "X joined the server" and boost messages
   invite_channel: welcome          # one permanent invite link; new members land here
-  suppress_system_messages: [tips, join_replies]  # no "Wave to say hi!" buttons
+  suppress_system_messages: [tips]  # join messages keep their "Wave to say hi!" button
 
 # Discord's own filters. A blocked message is not posted; the report goes to the alert channel.
 automod:
@@ -88,8 +88,7 @@ categories:
       - name: showcase
         topic: Screenshots and videos of your factories.
       - name: joins
-        topic: Discord's welcome and boost messages. Nothing to read here.
-        read_only: true
+        topic: Welcome messages for new members. Wave to say hi!
 
   # positions 20-79 are left free for the per-mod categories
 

@@ -1,0 +1,64 @@
+# Posts a poll to a channel, by hand only. Starts as a dry run that shows the poll.
+name: Discord poll
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel name without #
+        type: string
+        required: true
+      question:
+        type: string
+        required: true
+      answers:
+        description: One answer per line (2 to 10, up to 55 characters each)
+        type: string
+        required: true
+      days:
+        description: How long the poll runs
+        type: string
+        default: "7"
+      multi:
+        description: Allow several answers per member
+        type: boolean
+        default: false
+      dry_run:
+        description: Only show the poll, post nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Post the poll
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          QUESTION: ${{ inputs.question }}
+          ANSWERS: ${{ inputs.answers }}
+          DAYS: ${{ inputs.days }}
+          MULTI: ${{ inputs.multi }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python -m pip install --quiet -r requirements.txt
+          args=()
+          while IFS= read -r line; do [ -n "$line" ] && args+=(--answer "$line"); done <<< "$ANSWERS"
+          [ "$MULTI" = true ] && args+=(--multi)
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          status=0
+          python discord_poll.py --guild-config server.yml --channel "$CHANNEL" \
+            --question "$QUESTION" --days "$DAYS" \
+            --summary-file "$RUNNER_TEMP/poll.md" "${args[@]}" || status=$?
+          [ -f "$RUNNER_TEMP/poll.md" ] && cat "$RUNNER_TEMP/poll.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
